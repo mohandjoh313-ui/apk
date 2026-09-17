@@ -1,4 +1,4 @@
-name: Build INGCO APK
+name: Build INGCO V25 APK
 
 on:
   workflow_dispatch:
@@ -8,22 +8,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. تحميل ملفات الريبو
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
+      # 3. تثبيت Cordova
       - name: Install Cordova
         run: npm install -g cordova@12.0.0
 
-      - name: Create Android project
+      # 4. إنشاء مشروع Android
+      - name: Create Cordova Android project
         run: |
           cordova create android-app com.ingco.catalog INGCO
 
-      - name: Extract HTML
+      # 5. فك ملف HTML
+      - name: Extract catalog
         run: |
           rm -rf catalog
           mkdir -p catalog
@@ -32,16 +37,19 @@ jobs:
 
           if [ ! -f "catalog/index.html" ]; then
             echo "ERROR: index.html not found inside index.zip"
+            echo "ZIP CONTENTS:"
             unzip -l index.zip
             exit 1
           fi
 
-      - name: Put V25 into app
+      # 6. وضع V25 داخل التطبيق
+      - name: Install V25 HTML
         run: |
           rm -rf android-app/www/*
           cp catalog/index.html android-app/www/index.html
 
-      - name: Configure Android app
+      # 7. إعداد Cordova + صلاحيات الكاميرا
+      - name: Configure Android
         run: |
           cp app_icon.png android-app/icon.png
 
@@ -58,14 +66,14 @@ jobs:
                   '    <icon src="icon.png" />\n</widget>"
               )
 
-          # Internet / external resources
+          # Internet access
           if '<access origin="*"' not in s:
               s = s.replace(
                   "</widget>",
                   '    <access origin="*" />\n</widget>"
               )
 
-          # Allow navigation
+          # Allow WebView navigation
           if '<allow-navigation href="*"' not in s:
               s = s.replace(
                   "</widget>",
@@ -80,7 +88,8 @@ jobs:
                       file="app/src/main/AndroidManifest.xml"
                       mode="merge"
                       target="/manifest">
-                      <uses-permission android:name="android.permission.CAMERA" />
+                      <uses-permission
+                          android:name="android.permission.CAMERA" />
                   </edit-config>
           </widget>'''
               )
@@ -88,19 +97,69 @@ jobs:
           p.write_text(s)
           PY
 
+      # 8. إضافة Android
       - name: Add Android platform
         working-directory: android-app
         run: |
           cordova platform add android@15.1.0 --no-interactive
 
+      # 9. إضافة Plugin للتعامل مع صلاحية الكاميرا
+      - name: Add Android permissions plugin
+        working-directory: android-app
+        run: |
+          cordova plugin add cordova-plugin-android-permissions
+
+      # 10. إضافة Native bridge لطلب صلاحية الكاميرا
+      - name: Configure runtime camera permission
+        working-directory: android-app
+        run: |
+          mkdir -p hooks/after_prepare
+
+          cat > hooks/after_prepare/010_camera_permission.js <<'EOF'
+          #!/usr/bin/env node
+
+          const fs = require("fs");
+          const path = require("path");
+
+          const manifest = path.join(
+            "platforms",
+            "android",
+            "app",
+            "src",
+            "main",
+            "AndroidManifest.xml"
+          );
+
+          if (fs.existsSync(manifest)) {
+            let xml = fs.readFileSync(manifest, "utf8");
+
+            if (!xml.includes('android.permission.CAMERA')) {
+              xml = xml.replace(
+                "<application",
+                '<uses-permission android:name="android.permission.CAMERA" />\n    <application'
+              );
+            }
+
+            fs.writeFileSync(manifest, xml);
+          }
+          EOF
+
+          chmod +x hooks/after_prepare/010_camera_permission.js
+
+      # 11. بناء APK
       - name: Build APK
         working-directory: android-app
         run: |
+          cordova prepare android
           cordova build android --debug --no-interactive
 
+      # 12. رفع APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
+          name: INGCO-V25-APK
+          path: android-app/platforms/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error        with:
           name: INGCO-V25-APK
           path: android-app/platforms/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
