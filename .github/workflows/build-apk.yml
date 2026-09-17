@@ -14,7 +14,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install Cordova
         run: npm install -g cordova@12.0.0
@@ -31,6 +31,7 @@ jobs:
       - name: Add app icon
         run: |
           cp app_icon.png android-app/icon.png
+
           python3 - <<'PY'
           from pathlib import Path
 
@@ -39,7 +40,13 @@ jobs:
 
           s = s.replace(
               "</widget>",
-              '    <icon src="icon.png" />\n</widget>'
+              '    <icon src="icon.png" />\n'
+              '    <access origin="*" />\n'
+              '    <allow-navigation href="*" />\n'
+              '    <edit-config file="app/src/main/AndroidManifest.xml" mode="merge" target="/manifest">\n'
+              '        <uses-permission android:name="android.permission.CAMERA" />\n'
+              '    </edit-config>\n'
+              '</widget>'
           )
 
           p.write_text(s)
@@ -47,11 +54,13 @@ jobs:
 
       - name: Add Android platform
         working-directory: android-app
-        run: cordova platform add android@13.0.0 --no-interactive
+        run: |
+          cordova platform add android@15.1.0 --no-interactive
 
       - name: Build APK
         working-directory: android-app
-        run: cordova build android --debug --no-interactive
+        run: |
+          cordova build android --debug --no-interactive
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
