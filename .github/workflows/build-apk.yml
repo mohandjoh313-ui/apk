@@ -8,10 +8,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get files
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -23,12 +23,25 @@ jobs:
         run: |
           cordova create android-app com.ingco.catalog INGCO
 
-      - name: Put HTML into app
+      - name: Extract HTML
+        run: |
+          rm -rf catalog
+          mkdir -p catalog
+
+          unzip -o index.zip -d catalog
+
+          if [ ! -f "catalog/index.html" ]; then
+            echo "ERROR: index.html not found inside index.zip"
+            unzip -l index.zip
+            exit 1
+          fi
+
+      - name: Put V25 into app
         run: |
           rm -rf android-app/www/*
-          cp index.html android-app/www/index.html
+          cp catalog/index.html android-app/www/index.html
 
-      - name: Add app icon
+      - name: Configure Android app
         run: |
           cp app_icon.png android-app/icon.png
 
@@ -38,16 +51,39 @@ jobs:
           p = Path("android-app/config.xml")
           s = p.read_text()
 
-          s = s.replace(
-              "</widget>",
-              '    <icon src="icon.png" />\n'
-              '    <access origin="*" />\n'
-              '    <allow-navigation href="*" />\n'
-              '    <edit-config file="app/src/main/AndroidManifest.xml" mode="merge" target="/manifest">\n'
-              '        <uses-permission android:name="android.permission.CAMERA" />\n'
-              '    </edit-config>\n'
-              '</widget>'
-          )
+          # App icon
+          if '<icon src="icon.png"' not in s:
+              s = s.replace(
+                  "</widget>",
+                  '    <icon src="icon.png" />\n</widget>"
+              )
+
+          # Internet / external resources
+          if '<access origin="*"' not in s:
+              s = s.replace(
+                  "</widget>",
+                  '    <access origin="*" />\n</widget>"
+              )
+
+          # Allow navigation
+          if '<allow-navigation href="*"' not in s:
+              s = s.replace(
+                  "</widget>",
+                  '    <allow-navigation href="*" />\n</widget>"
+              )
+
+          # Camera permission
+          if 'android.permission.CAMERA' not in s:
+              s = s.replace(
+                  "</widget>",
+                  '''    <edit-config
+                      file="app/src/main/AndroidManifest.xml"
+                      mode="merge"
+                      target="/manifest">
+                      <uses-permission android:name="android.permission.CAMERA" />
+                  </edit-config>
+          </widget>'''
+              )
 
           p.write_text(s)
           PY
@@ -67,3 +103,4 @@ jobs:
         with:
           name: INGCO-V25-APK
           path: android-app/platforms/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
