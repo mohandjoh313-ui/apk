@@ -8,36 +8,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Get files
         uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          distribution: temurin
-          java-version: '17'
+          node-version: '20'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+      - name: Install Cordova
+        run: npm install -g cordova@12.0.0
 
-      - name: Prepare app icon
+      - name: Create Android project
         run: |
-          mkdir -p android-app/app/src/main/res/drawable
-          cp app_icon.png android-app/app/src/main/res/drawable/app_icon.png
+          cordova create android-app com.ingco.catalog INGCO
 
-      - name: Copy V25
+      - name: Put HTML into app
         run: |
-          mkdir -p android-app/app/src/main/assets
-          cp index.html android-app/app/src/main/assets/index.html
+          rm -rf android-app/www/*
+          cp index.html android-app/www/index.html
+
+      - name: Add app icon
+        run: |
+          cp app_icon.png android-app/icon.png
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("android-app/config.xml")
+          s = p.read_text()
+
+          s = s.replace(
+              "</widget>",
+              '    <icon src="icon.png" />\n</widget>'
+          )
+
+          p.write_text(s)
+          PY
+
+      - name: Add Android platform
+        working-directory: android-app
+        run: cordova platform add android@13.0.0 --no-interactive
 
       - name: Build APK
         working-directory: android-app
-        run: gradle assembleDebug
+        run: cordova build android --debug --no-interactive
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: INGCO-V25-APK
-          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          path: android-app/platforms/android/app/build/outputs/apk/debug/app-debug.apk
